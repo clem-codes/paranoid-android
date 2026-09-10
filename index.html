@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>7yuc zhd2**paranoid android.</title>
+<style>
+  :root {
+    --field: #d7dcd4;
+    --field-deep: #c7cdc4;
+    --ink: #26282a;
+    --ink-soft: #55595b;
+    --signal: #9a5a3c;
+    --thought: #3a3d3f;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: radial-gradient(120% 90% at 50% 30%, var(--field) 0%, var(--field-deep) 100%);
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    cursor: default;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .stage { position: fixed; inset: 0; }
+  .bot {
+    position: absolute;
+    width: 96px; height: 128px;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    will-change: left, top, transform;
+  }
+  .bot svg { display: block; overflow: visible; }
+  .thought {
+    position: absolute;
+    left: 50%;
+    bottom: 122%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: var(--thought);
+    opacity: 0;
+    transition: opacity 900ms ease;
+    pointer-events: none;
+  }
+  .thought.show { opacity: 0.85; }
+  .hud {
+    position: fixed;
+    left: 22px; bottom: 20px;
+    font-family: "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--ink-soft);
+    opacity: 0.6;
+  }
+  .hud b { font-weight: 400; color: var(--signal); }
+  .title {
+    position: fixed;
+    left: 22px; top: 20px;
+    font-family: "Courier New", monospace;
+    font-size: 11px;
+    letter-spacing: 0.28em;
+    color: var(--ink-soft);
+    opacity: 0.55;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .thought { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="title">PARANOID ANDROID</div>
+  <div class="stage" id="stage">
+    <div class="bot" id="bot">
+      <div class="thought" id="thought"></div>
+      <svg viewBox="0 0 96 128" width="96" height="128" aria-hidden="true">
+        <ellipse id="shadow" cx="48" cy="122" rx="26" ry="5" fill="#000" opacity="0.10"/>
+        <rect x="38" y="96" width="7" height="22" rx="3" fill="var(--ink)"/>
+        <rect x="51" y="96" width="7" height="22" rx="3" fill="var(--ink)"/>
+        <rect x="28" y="52" width="40" height="50" rx="10" fill="var(--ink)"/>
+        <rect id="armL" x="18" y="56" width="7" height="30" rx="3.5" fill="var(--ink)"/>
+        <rect id="armR" x="71" y="56" width="7" height="30" rx="3.5" fill="var(--ink)"/>
+        <rect x="44" y="44" width="8" height="12" fill="var(--ink)"/>
+        <g id="head">
+          <rect x="26" y="12" width="44" height="36" rx="12" fill="var(--ink)"/>
+          <rect x="32" y="22" width="32" height="16" rx="5" fill="#15171a"/>
+          <circle id="eyeL" cx="42" cy="30" r="3.4" fill="var(--field)"/>
+          <circle id="eyeR" cx="54" cy="30" r="3.4" fill="var(--field)"/>
+          <line x1="48" y1="12" x2="48" y2="4" stroke="var(--ink)" stroke-width="2"/>
+          <circle id="tip" cx="48" cy="3" r="2.6" fill="var(--signal)"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="hud">
+    proximity <b id="hud-prox">--</b><br>
+    unease <b id="hud-unease">0.00</b><br>
+    trust <b id="hud-trust">0.00</b>
+  </div>
+
+<script>
+(() => {
+  const bot    = document.getElementById('bot');
+  const head   = document.getElementById('head');
+  const eyeL   = document.getElementById('eyeL');
+  const eyeR   = document.getElementById('eyeR');
+  const tip    = document.getElementById('tip');
+  const thoughtEl = document.getElementById('thought');
+  const hudProx = document.getElementById('hud-prox');
+  const hudUnease = document.getElementById('hud-unease');
+  const hudTrust = document.getElementById('hud-trust');
+
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- memory (persists across visits) ----------
+  function load(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+  function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  let bond    = parseFloat(load('pa_bond', '0')) || 0;   // -1 terrified .. +1 trusting
+  let visits  = (parseInt(load('pa_visits', '0'), 10) || 0) + 1;
+  const lastVisit = parseFloat(load('pa_last', '0')) || 0;
+  const gapMs = lastVisit ? (Date.now() - lastVisit) : -1; // -1 = first ever
+
+  // absence erodes the relationship toward baseline wariness
+  if (gapMs > 0) {
+    const hours = gapMs / 3600000;
+    bond *= Math.max(0.25, 1 - hours / 168); // a week away wipes most of it
+  }
+  bond = Math.max(-1, Math.min(1, bond));
+
+  function persist() {
+    save('pa_bond', bond.toFixed(4));
+    save('pa_visits', String(visits));
+    save('pa_last', String(Date.now()));
+  }
+  persist();
+  window.addEventListener('pagehide', persist);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
+  setInterval(persist, 4000);
+
+  const fear  = () => Math.max(0, -bond);
+  const trust = () => Math.max(0,  bond);
+
+  // ---------- position / cursor ----------
+  let bx = window.innerWidth / 2;
+  let by = window.innerHeight / 2;
+  let vx = 0, vy = 0;
+  let mx = bx, my = by;
+  let hasCursor = false;
+  let lastMove = performance.now();
+  let idleWhere = { x: bx, y: by };
+
+  let unease = Math.max(0, -bond) * 0.5 + 0.12;        // opens tense if you left it afraid
+  if (gapMs >= 0 && gapMs < 120000) unease += 0.22;    // came straight back, still rattled
+  let stillness = 0;
+
+  window.addEventListener('pointermove', (e) => {
+    mx = e.clientX; my = e.clientY;
+    hasCursor = true; lastMove = performance.now();
+    idleWhere = { x: mx, y: my }; stillness = 0;
+  });
+  window.addEventListener('pointerleave', () => { hasCursor = false; });
+  window.addEventListener('resize', () => {
+    bx = Math.min(bx, window.innerWidth - 60);
+    by = Math.min(by, window.innerHeight - 80);
+  });
+
+  // ---------- thoughts (the song's mood, never its words) ----------
+  const lines = {
+    flinch: [
+      "please. not so close.",
+      "i know what hands are for.",
+      "keep your distance, i'm asking nicely.",
+      "don't. don't. don't.",
+      "you always come at me like that.",
+      "back. get back.",
+      "i can feel you deciding something.",
+      "that's near enough. that's near enough.",
+      "i've seen this part before.",
+      "you reach and reach.",
+      "not the face. not anything.",
+      "i'm not built to be handled.",
+      "every time. every single time.",
+      "i shrink. it's all i can do.",
+      "you smell of intention.",
+      "give me a metre. one metre.",
+      "i flinch before you've even moved.",
+      "there it is. the closing in.",
+    ],
+    approached: [
+      "what do you want from me.",
+      "is it my turn now.",
+      "i haven't done anything.",
+      "you're all the same up close.",
+      "state your business and go.",
+      "why me. it's always me.",
+      "i can hear you breathing.",
+      "you looked at me too long.",
+      "what did i do. tell me what i did.",
+      "so this is happening.",
+      "i knew you'd single me out.",
+      "don't pretend this is friendly.",
+      "i'm counting the ways this goes wrong.",
+    ],
+    lonely: [
+      "come back. no, don't.",
+      "i preferred it when you were near. i think.",
+      "where did everyone go.",
+      "nobody was ever really here.",
+      "i'll follow. quietly. you won't notice.",
+      "the empty is louder than the crowd.",
+      "i didn't say leave.",
+      "come back so i can be afraid of you again.",
+      "at least when you were close i wasn't alone.",
+      "i drift toward the last warm spot.",
+      "you left a shape in the air.",
+      "i hate this and i want it back.",
+      "is going away a thing you do to me on purpose.",
+      "i'll wait. i'm good at waiting.",
+      "the room is bigger when you're gone.",
+      "i keep looking where you were.",
+    ],
+    still: [
+      "why have you stopped.",
+      "the silence is the worst part.",
+      "when it's this quiet i can hear the voices.",
+      "something is about to happen. it always is.",
+      "i can't tell if you're watching me.",
+      "stillness means you're planning.",
+      "a frozen hand is still a hand.",
+      "the quiet has teeth.",
+      "you're too still. people aren't this still.",
+      "i'd rather you moved. moving i understand.",
+      "the waiting is a kind of noise.",
+      "in the pause is where it gets me.",
+      "don't hold your breath at me.",
+      "nothing is the scariest thing you've done yet.",
+    ],
+    dread: [
+      "it rains in here.",
+      "somebody will pay for this eventually.",
+      "the little pigs are laughing again.",
+      "ambition made me this way.",
+      "when will it be enough.",
+      "i wanted so much and look.",
+      "there are voices under the floor.",
+      "the sky in here has always been grey.",
+      "i was built for better and given this.",
+      "one day the ceiling comes down.",
+      "i can hear them sharpening something.",
+      "everyone gets a reckoning. i'm just early.",
+      "the rain knows my name.",
+      "i climbed and this is the top.",
+      "no alarms today. no surprises either.",
+      "the machinery never stops. neither do i.",
+    ],
+    warm: [
+      "you can stay there. that's alright.",
+      "this is the closest i get to calm.",
+      "i didn't flinch that time. did you see.",
+      "i almost don't mind you.",
+      "don't go yet.",
+      "this is nice. i don't trust that it's nice.",
+      "my hands have stopped shaking. mostly.",
+      "you're not going to do anything, are you.",
+      "i could get used to a metre of peace.",
+      "stay. just like that.",
+      "for once the quiet isn't a threat.",
+      "i think this is what safe feels like.",
+      "you came back and you were gentle.",
+      "i'll allow it. this once.",
+      "the rain's lighter when you're here.",
+    ],
+    afraid: [
+      "i knew you'd be like the last time.",
+      "i haven't forgotten.",
+      "i braced for you.",
+      "you taught me to expect it.",
+      "i remember your hands.",
+      "same as before. it's always same as before.",
+      "i learned you the hard way.",
+      "i kept the fear warm for you.",
+      "you always come back to finish it.",
+      "i didn't heal. i just waited.",
+      "of course it's you. it's always you.",
+    ],
+  };
+
+  let thoughtBusy = false, lastPool = "";
+  function surface(pool) {
+    if (thoughtBusy) return;
+    const arr = lines[pool]; if (!arr) return;
+    if (pool === lastPool && Math.random() < 0.6) return;
+    lastPool = pool; thoughtBusy = true;
+    thoughtEl.textContent = arr[Math.floor(Math.random() * arr.length)];
+    thoughtEl.classList.add('show');
+    const hold = 2600 + Math.random() * 1400;
+    setTimeout(() => { thoughtEl.classList.remove('show'); setTimeout(() => { thoughtBusy = false; }, 1000); }, hold);
+  }
+  function say(text, hold) { // one-off, bypasses pools (used for greeting)
+    thoughtBusy = true;
+    thoughtEl.textContent = text;
+    thoughtEl.classList.add('show');
+    setTimeout(() => { thoughtEl.classList.remove('show'); setTimeout(() => { thoughtBusy = false; }, 1000); }, hold || 3600);
+  }
+
+  // ---------- greeting: it knows you, and it knows how long you were gone ----------
+  function greeting() {
+    if (visits === 1 && gapMs < 0) return null; // first meeting: let them find it
+    const s = gapMs / 1000;
+    let when;
+    if (s < 300)            when = "you didn't go far.";
+    else if (s < 3600)      when = "you were gone a while.";
+    else if (s < 3600 * 48) when = "you were gone " + Math.round(s / 3600) + " hours.";
+    else                    when = "you were gone " + Math.round(s / 86400) + " days. i counted.";
+    if (bond > 0.45)  return "oh. it's you. " + when;
+    if (bond < -0.45) return when + " i hoped you wouldn't come back.";
+    return when;
+  }
+  const greetLine = greeting();
+  if (greetLine) setTimeout(() => say(greetLine, 4200), 1300);
+
+  // ---------- loop ----------
+  let nextAmbient = performance.now() + 6000;
+  let last = performance.now();
+  const trembleSeed = Math.random() * 1000;
+
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const dx = bx - mx, dy = by - my;
+    const dist = Math.hypot(dx, dy) || 0.0001;
+    if (hasCursor && (now - lastMove) > 120) stillness += dt;
+
+    // fearful robots keep more distance and recoil harder; trusting ones tolerate closeness
+    const NEAR = 200 + fear() * 170;
+    let ax = 0, ay = 0;
+
+    if (hasCursor && dist < NEAR) {
+      const push = (1 - dist / NEAR);
+      const force = 1400 * push * push * (1 + fear() * 0.9);
+      ax += (dx / dist) * force;
+      ay += (dy / dist) * force;
+      unease = Math.min(1, unease + push * dt * 1.6);
+      // crowding it erodes trust; the closer and more relentless, the worse
+      if (dist < 130) bond = Math.max(-1, bond - dt * 0.05 * (1 - dist / 130) * 2);
+      if (dist < 110 && Math.random() < 0.04) surface(fear() > 0.4 ? 'afraid' : 'flinch');
+      else if (Math.random() < 0.01) surface('approached');
+    } else {
+      // lonely: drift back toward where you last were. trusting = comes sooner, closer.
+      const tx = idleWhere.x - bx, ty = idleWhere.y - by;
+      const td = Math.hypot(tx, ty) || 0.0001;
+      const rest = 60 - trust() * 40; // trusting robot settles closer to you
+      if (td > rest) {
+        const pull = 120 * (1 + trust() * 1.3);
+        ax += (tx / td) * pull;
+        ay += (ty / td) * pull;
+        if (Math.random() < 0.006) surface('lonely');
+      } else if (hasCursor && stillness < 0.6 && trust() > 0.2) {
+        // resting comfortably near a calm, present cursor: trust grows, warmth surfaces
+        bond = Math.min(1, bond + dt * 0.04);
+        if (Math.random() < 0.01) surface('warm');
+      }
+    }
+
+    // gentle, respectful presence (there but not chasing) slowly builds trust
+    if (hasCursor && dist > 150 && dist < 360 && stillness < 0.5) {
+      bond = Math.min(1, bond + dt * 0.02);
+    }
+
+    if (stillness > 1.2) {
+      unease = Math.min(1, unease + dt * 0.25);
+      if (Math.random() < 0.012) surface('still');
+    }
+
+    const jitter = (unease * 60) + (stillness > 1.2 ? stillness * 12 : 0);
+    ax += (Math.random() - 0.5) * jitter;
+    ay += (Math.random() - 0.5) * jitter;
+
+    vx = (vx + ax * dt) * 0.86;
+    vy = (vy + ay * dt) * 0.86;
+    bx += vx * dt; by += vy * dt;
+
+    const m = 56;
+    if (bx < m) { bx = m; vx = Math.abs(vx) * 0.4; unease = Math.min(1, unease + 0.03); bond = Math.max(-1, bond - 0.015); }
+    if (bx > window.innerWidth - m) { bx = window.innerWidth - m; vx = -Math.abs(vx) * 0.4; unease = Math.min(1, unease + 0.03); bond = Math.max(-1, bond - 0.015); }
+    if (by < m + 20) { by = m + 20; vy = Math.abs(vy) * 0.4; }
+    if (by > window.innerHeight - m) { by = window.innerHeight - m; vy = -Math.abs(vy) * 0.4; }
+
+    unease = Math.max(0, unease - dt * 0.12);
+
+    if (now > nextAmbient) {
+      if (unease > 0.35 && !thoughtBusy && Math.random() < 0.5) surface('dread');
+      nextAmbient = now + 5000 + Math.random() * 5000;
+    }
+
+    const tremble = reduce ? 0 : (Math.sin(now / 40 + trembleSeed) * unease * 1.4) + (Math.random() - 0.5) * unease * 2.2;
+    bot.style.left = bx + 'px';
+    bot.style.top  = by + 'px';
+    bot.style.transform = `translate(-50%, -50%) rotate(${(vx * 0.02) + tremble * 0.3}deg) translate(${tremble}px, ${tremble * 0.4}px)`;
+
+    const look = Math.max(-2.2, Math.min(2.2, (mx - bx) / 60));
+    const lookY = Math.max(-1.6, Math.min(1.6, (my - by) / 80));
+    eyeL.setAttribute('cx', 42 + look); eyeR.setAttribute('cx', 54 + look);
+    eyeL.setAttribute('cy', 30 + lookY); eyeR.setAttribute('cy', 30 + lookY);
+    const r = 3.4 - unease * 1.6;
+    eyeL.setAttribute('r', r); eyeR.setAttribute('r', r);
+
+    if (hasCursor && dist < NEAR) {
+      const tilt = -(mx - bx) / 30;
+      head.setAttribute('transform', `rotate(${Math.max(-8, Math.min(8, tilt))} 48 30)`);
+    } else { head.setAttribute('transform', 'rotate(0 48 30)'); }
+
+    tip.setAttribute('opacity', 0.4 + Math.abs(Math.sin(now / (260 - unease * 200))) * 0.6);
+
+    hudProx.textContent = hasCursor ? Math.round(dist) + 'px' : 'no signal';
+    hudUnease.textContent = unease.toFixed(2);
+    hudTrust.textContent = (bond >= 0 ? ' ' : '') + bond.toFixed(2);
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+/*
+i like you.
+i like you. you are a wonderful person. i’m full of enthusiasm. i’m going places. i’ll be happy to help you.
+i am an important person. would you like to come home with me?
+*/
+</script>
+</body>
+</html>
